@@ -4,7 +4,6 @@ from pdf_qa import extract_text_from_pdf, chunk_text, build_faiss, retrieve, ask
 
 st.set_page_config(page_title="Smart PDF Assistant", layout="wide")
 
-# ------------------ Sidebar ------------------
 st.sidebar.title("📂 Upload PDF")
 uploaded_file = st.sidebar.file_uploader("Upload a PDF", type="pdf")
 
@@ -12,7 +11,6 @@ uploaded_file = st.sidebar.file_uploader("Upload a PDF", type="pdf")
 st.sidebar.title("🔍 Navigation")
 page = st.sidebar.radio("Go to", ["Q&A", "Study Plan", "Quiz", "History"])
 
-# ------------------ Session State ------------------
 if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
 if "study_plan" not in st.session_state:
@@ -20,15 +18,13 @@ if "study_plan" not in st.session_state:
 if "quiz" not in st.session_state:
     st.session_state.quiz = []
 
-# ------------------ PDF Processing ------------------
 if uploaded_file:
     with st.spinner("Reading and indexing PDF..."):
         text = extract_text_from_pdf(uploaded_file)
         chunks = chunk_text(text)
         index, embeddings = build_faiss(chunks)
-        st.sidebar.success("✅ PDF processed")
+        st.sidebar.success("PDF processed")
 
-    # ------------------ Q&A ------------------
     if page == "Q&A":
         st.title("📄 Q&A with PDF")
         query = st.text_input("Ask a question:")
@@ -38,14 +34,12 @@ if uploaded_file:
             answer = ask_llm(f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:")
             st.session_state.qa_history.append({"q": query, "a": answer})
 
-        # Show full history
         if st.session_state.qa_history:
             for item in reversed(st.session_state.qa_history):
                 st.write(f"**Q:** {item['q']}")
                 st.write(f"**A:** {item['a']}")
                 st.markdown("---")
 
-    # ------------------ Study Plan ------------------
     elif page == "Study Plan":
         st.title("📘 Personalized Study Plan")
         time_input = st.text_input("Available time (e.g., '2 hours', '3 days')")
@@ -59,7 +53,6 @@ if uploaded_file:
             st.write("### Study Plan:")
             st.write(st.session_state.study_plan)
 
-    # ------------------ Quiz ------------------
     elif page == "Quiz":
         st.title("📝 Quiz Generator")
         num_qs = st.number_input("Number of questions", min_value=1, max_value=10, value=3, step=1)
@@ -119,16 +112,15 @@ if uploaded_file:
                     correct = q["answer"]
 
                     if user_ans == correct:
-                        st.success(f"Q{i+1}: ✅ Correct — {correct}")
+                        st.success(f"Q{i+1}: Correct — {correct}")
                         score += 1
                     else:
-                        st.error(f"Q{i+1}: ❌ Wrong — You chose: {user_ans}. Correct: {correct}")
+                        st.error(f"Q{i+1}: Wrong — You chose: {user_ans}. Correct: {correct}")
                     st.caption(f"Why: {q.get('explanation','No explanation provided')}")
                     st.markdown("---")
 
                 st.info(f"Final Score: {score}/{len(st.session_state.quiz)}")
 
-    # ------------------ History ------------------
     elif page == "History":
         st.title("📜 Q&A History")
         if st.session_state.qa_history:
