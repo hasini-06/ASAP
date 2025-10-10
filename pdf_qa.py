@@ -16,10 +16,14 @@ def extract_text_from_pdf(pdf_file):
         text += page.extract_text() or ""
     return text
 
-def chunk_text(text, chunk_size=500):
-    """Split text into smaller chunks (default 500 words)."""
+def chunk_text(text, chunk_size=300, overlap=50):
     words = text.split()
-    return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i + chunk_size])
+        chunks.append(chunk)
+    return chunks
+
 
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -31,7 +35,7 @@ def build_faiss(chunks):
     index.add(np.array(embeddings))
     return index, embeddings
 
-def retrieve(query, chunks, index, k=3):
+def retrieve(query, chunks, index, k=5):
     """Retrieve top-k relevant chunks for a query."""
     query_emb = embedder.encode([query])
     distances, indices = index.search(np.array(query_emb), k)
@@ -43,7 +47,7 @@ def ask_llm(prompt, temperature=0.3, model="llama-3.3-70b-versatile"):
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are an expert assistant. Use only the context below to answer the user's question."},
                 {"role": "user", "content": prompt}
             ],
         )
