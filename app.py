@@ -1,23 +1,34 @@
 import streamlit as st
-import json
-from pdf_qa import extract_text_from_pdf, chunk_text, build_faiss, retrieve, ask_llm
+from pdf_qa import extract_text_from_pdf, chunk_text, build_faiss
+from components.page_qa import render_qa_page
+from components.page_study_plan import render_study_plan_page
+from components.page_quiz import render_quiz_page
+from components.page_history import render_history_page
 
+# Page configuration
 st.set_page_config(page_title="Smart PDF Assistant", layout="wide")
 
-st.sidebar.title("📂 Upload PDF")
+# Initialize session state
+def init_session_state():
+    """Initialize session state variables"""
+    if "qa_history" not in st.session_state:
+        st.session_state.qa_history = []
+    if "study_plan" not in st.session_state:
+        st.session_state.study_plan = None
+    if "quiz" not in st.session_state:
+        st.session_state.quiz = []
+
+init_session_state()
+
+# Sidebar - PDF Upload
+st.sidebar.title("Upload PDF")
 uploaded_file = st.sidebar.file_uploader("Upload a PDF", type="pdf")
 
-# Navigation
-st.sidebar.title("🔍 Navigation")
+# Sidebar - Navigation
+st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Q&A", "Study Plan", "Quiz", "History"])
 
-if "qa_history" not in st.session_state:
-    st.session_state.qa_history = []
-if "study_plan" not in st.session_state:
-    st.session_state.study_plan = None
-if "quiz" not in st.session_state:
-    st.session_state.quiz = []
-
+# Main application logic
 if uploaded_file:
     with st.spinner("Reading and indexing PDF..."):
         text = extract_text_from_pdf(uploaded_file)
@@ -25,135 +36,14 @@ if uploaded_file:
         index, embeddings = build_faiss(chunks)
         st.sidebar.success("PDF processed")
 
+    # Route to appropriate page
     if page == "Q&A":
-        st.title("📄 Q&A with PDF")
-        query = st.text_input("Ask a question:")
-        if st.button("Get Answer") and query:
-            top_chunks = retrieve(query, chunks, index, k=3)
-            context = " ".join(top_chunks)
-            answer = ask_llm(f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:")
-            st.session_state.qa_history.append({"q": query, "a": answer})
-
-        if st.session_state.qa_history:
-            for item in reversed(st.session_state.qa_history):
-                st.write(f"**Q:** {item['q']}")
-                st.write(f"**A:** {item['a']}")
-                st.markdown("---")
-
+        render_qa_page(text, chunks, index)
     elif page == "Study Plan":
-        st.title("📘 Personalized Study Plan")
-        time_input = st.text_input("Available time (e.g., '2 hours', '3 days')")
-        if st.button("Generate Plan") and time_input:
-            plan = ask_llm(
-                f"Create a detailed study plan based on this content:\n\n{text[:3000]}\n\nTime available: {time_input}\n\nStudy Plan:"
-            )
-            st.session_state.study_plan = plan
-
-        if st.session_state.study_plan:
-            st.write("### Study Plan:")
-            st.write(st.session_state.study_plan)
-
+        render_study_plan_page(text)
     elif page == "Quiz":
-        st.title("📝 Quiz Generator")
-
-        # Step 1: Inputs
-        num_qs = st.number_input("Number of questions", min_value=1, max_value=10, value=3, step=1)
-        difficulty = st.selectbox("Select Difficulty Level", ["Easy", "Medium", "Hard"])
-
-        st.markdown(f"**Difficulty Selected:** {difficulty}")
-
-        # Step 2: Generate Quiz
-        if st.button("Create Quiz"):
-            quiz_prompt = f"""
-            Generate {num_qs} multiple-choice quiz questions based ONLY on the PDF content below.
-            The questions should be of **{difficulty.lower()}** difficulty level.
-
-            Difficulty Guide:
-            - Easy: Direct factual questions.
-            - Medium: Conceptual or reasoning-based questions.
-            - Hard: Analytical or multi-step reasoning questions.
-
-            Each question must have:
-            - "question": string
-            - "options": list of 4 strings
-            - "answer": the correct option
-            - "explanation": short reason why it's correct
-
-            Return ONLY a valid JSON array.
-            Content: {text[:3000]}
-            """
-
-            quiz_text = ask_llm(quiz_prompt, temperature=0.5)
-
-            try:
-                start = quiz_text.find("[")
-                end = quiz_text.rfind("]") + 1
-                quiz_json = quiz_text[start:end]
-                quiz = json.loads(quiz_json)
-            except Exception as e:
-                st.error(f"⚠️ Failed to parse quiz: {e}")
-                quiz = []
-
-            st.session_state.quiz = quiz
-            st.session_state.user_answers = [None] * len(quiz)
-            st.session_state.quiz_submitted = False
-
-        # Step 3: Display Quiz
-        if st.session_state.quiz:
-            with st.form("quiz_form"):
-                for i, q in enumerate(st.session_state.quiz):
-                    st.subheader(f"Q{i+1}: {q['question']}")
-                    st.session_state.user_answers[i] = st.radio(
-                        "Choose an option:",
-                        q["options"],
-                        index=None,
-                        key=f"q{i}"
-                    )
-                    st.markdown("---")
-
-                submitted = st.form_submit_button("Submit All")
-
-            # Step 4: Evaluation
-            if submitted:
-                if None in st.session_state.user_answers:
-                    st.warning("⚠️ Please answer all questions before submitting.")
-                else:
-                    st.session_state.quiz_submitted = True
-
-            if st.session_state.quiz_submitted:
-                score = 0
-                for i, q in enumerate(st.session_state.quiz):
-                    user_ans = st.session_state.user_answers[i]
-                    correct = q["answer"]
-
-                    if user_ans == correct:
-                        # Normalize answers before comparing
-                        user_ans_clean = user_ans.strip().lower().replace(".", "")
-                        correct_clean = correct.strip().lower().replace(".", "")
-
-                        if user_ans_clean == correct_clean:
-                            st.success(f"Q{i+1}: ✅ Correct — {correct}")
-                            score += 1
-                        else:
-                            st.error(f"Q{i+1}: ❌ Wrong — You chose: {user_ans}. Correct: {correct}")
-
-                    else:
-                        st.error(f"Q{i+1}: ❌ Wrong — You chose: {user_ans}. Correct: {correct}")
-                    st.caption(f"💡 Why: {q.get('explanation','No explanation provided')}")
-                    st.markdown("---")
-
-                st.info(f"Final Score: {score}/{len(st.session_state.quiz)}")
-
-
+        render_quiz_page(text)
     elif page == "History":
-        st.title("📜 Q&A History")
-        if st.session_state.qa_history:
-            for item in reversed(st.session_state.qa_history):
-                st.write(f"**Q:** {item['q']}")
-                st.write(f"**A:** {item['a']}")
-                st.markdown("---")
-        else:
-            st.info("No history yet. Ask some questions first!")
-
+        render_history_page()
 else:
-    st.warning("⚠️ Please upload a PDF to get started.")
+    st.warning("Please upload a PDF to get started.")
